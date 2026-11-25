@@ -1,0 +1,14 @@
+spring:
+  config:
+    import: "azureAppConfiguration"
+  cloud:
+    azure:
+      appconfiguration:
+        credential:
+          client-id: repro-client-id
+          client-secret: repro-client-secret
+        profile:
+          tenant-id: repro-tenant-id
+        stores:
+          - endpoint: https://repro.azconfig.io
+            enabled: false

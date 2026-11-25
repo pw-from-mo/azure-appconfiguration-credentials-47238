@@ -20,7 +20,7 @@ class AzureAppConfigurationCredentialMergeTest {
     private static final String TENANT_ID = "repro-tenant-id";
 
     @Test
-    void loadPropertiesShouldPreserveLocallyBoundCredentialsWhenGlobalCredentialsAreUnset() {
+    void loadPropertiesShouldPreserveAppConfigurationCredentialsWhenGlobalPropertiesAreUnset() {
         // given
         var source = new MapConfigurationPropertySource(Map.of(
             "spring.cloud.azure.appconfiguration.credential.client-id", CLIENT_ID,

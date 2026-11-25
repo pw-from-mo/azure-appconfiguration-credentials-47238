@@ -1,37 +1,49 @@
-# Spring Cloud Azure App Configuration credential merge repro
+# Spring Cloud Azure App Configuration credential repro
 
-Minimal, network-free reproducer for [Azure SDK for Java issue #47238](https://github.com/Azure/azure-sdk-for-java/issues/47238). It targets Spring Cloud Azure `7.5.0`, the latest released version as of 2026-11-25. The `azure-74` profile tests the `7.4.0` version used by `infra/oemportal-workflow2`; the `azure-6` profile tests the `6.0.0` version in the original report.
+Standalone reproducers for [Azure SDK for Java issue #47238](https://github.com/Azure/azure-sdk-for-java/issues/47238). The default Maven profile uses Spring Cloud Azure `7.5.0`; `-Pazure-74` uses the `7.4.0` version resolved by `infra/oemportal-workflow2`; `-Pazure-6` uses the `6.0.0` version in the original report.
 ...
 
 ## Run
 
 Requirements: JDK 17+ and Maven 3.9+.
 
+Run the focused property-merge test against the latest release:
+
 ```sh
-mvn test
+mvn -Dtest=AzureAppConfigurationCredentialMergeTest test
 ```
 
-To check the workflow 2 dependency:
+Run the focused test against workflow 2's version:
 
 ```sh
-mvn -Pazure-74 test
+mvn -Pazure-74 -Dtest=AzureAppConfigurationCredentialMergeTest test
 ```
 
-To check the original reported SDK version:
+Run the focused test against the original reported version:
 
 ```sh
-mvn -Pazure-6 test
+mvn -Pazure-6 -Dtest=AzureAppConfigurationCredentialMergeTest test
+```
+
+Run the integrated Spring Boot context test against workflow 2's version:
+
+```sh
+mvn -Pazure-74 -Dtest=AzureAppConfigurationBootstrapContextTest test
 ```
 ...
 
-The test uses synthetic credential strings and never authenticates. No Azure account or store is needed. Maven may need network access to download dependencies on the first run; the test itself makes no Azure network calls.
+No Azure account, real credentials, Azure network access, or local listening socket is needed. The tests use synthetic values and the Boot context test disables the store after configuring the `azureAppConfiguration` ConfigData import. Maven may need network access to download dependencies on the first run.
 
-## What the test does
+## Focused property-merge test
 
-The test uses Spring Boot's `Binder` to bind `spring.cloud.azure.appconfiguration.credential` and `spring.cloud.azure.appconfiguration.profile.tenant-id`, just as the SDK bootstrap registrar binds the global and service-specific properties. It then invokes the SDK's `AzureGlobalPropertiesUtils.loadProperties(global, appConfigurationProperties)` merge.
+`AzureAppConfigurationCredentialMergeTest` uses Spring Boot's `Binder` to bind service-specific client ID, secret, and tenant ID, then calls the same `AzureGlobalPropertiesUtils.loadProperties` merge used by the SDK bootstrap. With the affected implementation, null global values replace all three service-specific fields, so the preservation assertions fail.
 
-The global properties are left unset. The test asserts that merging them preserves the locally bound client ID, secret, and tenant ID. With the affected implementation, `AzurePropertiesUtils.copyAzureCommonProperties` calls `BeanUtils.copyProperties` for global credential/profile fields, copying null global values over those local values. `mvn test` therefore fails on the preservation assertions; that failure is the expected reproduction. The same test can be run against SDK versions `7.4.0` (`-Pazure-74`) and `6.0.0` (`-Pazure-6`).
+## Integrated Spring Boot context test
+
+`AzureAppConfigurationBootstrapContextTest` starts a real Spring Boot `ApplicationContext` and loads `spring.config.import=azureAppConfiguration` with synthetic service-specific credentials. The store is disabled, so ConfigData initialization registers the SDK bootstrap factories but does not issue requests. The test asks the registered SDK factory to build its client (without sending an HTTP request) and inspects the `TokenCredential` configured on `ConfigurationClientBuilder` before any customizer can replace it.
+
+With the affected merge, the builder has a `DefaultAzureCredential`; the test expects a `ClientSecretCredential` because the service-specific client ID, secret, and tenant ID are present in `application.yml`. The context starts successfully, and the test fails at that assertion. This demonstrates that the SDK discarded the configured service credentials. The environment still exposes the original YAML values; it is the merged SDK properties used for client creation that lose them.
 
 ## Expected behavior
 
-Unset global properties should not erase explicitly configured App Configuration credentials or tenant ID. The `loadProperties` result should retain `repro-client-id`, `repro-client-secret`, and `repro-tenant-id`.
+Unset global properties should not erase explicitly configured App Configuration credentials or tenant ID. With the synthetic service-specific client ID, secret, and tenant ID configured, the SDK bootstrap should configure a `ClientSecretCredential` on the App Configuration client builder.
